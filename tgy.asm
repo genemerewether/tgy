@@ -1,20 +1,41 @@
-;**** **** **** **** ****
+;This has been Adapted from the SimonK Firmware to give a simple I2C interface with RPM feedback,
+;the following modifications have been made:
+
+;1. Removed various include options for other ESC boards
+;2. tgy370 - Added com_count_h, com_count_l & i2c_tx_counter RAM addresses
+;3. Added in the commutation counter as a piggyback onto the MOTOR_DEBUG function
+;4. Transmit the commutation counter every time the speed is updated, but not reset it to zero (for offboard error checking)
+;5. Set it to map the I2C input directly to the internal speed control, giving 0 to 800 steps
+
+;Version 2 has been modified to save both the com_count_h and _l at the same time, as before it was possible for them to be
+;transmitted out of sync. An attempt was also made to ensure the operations on the _h and _l bytes were atomic, however after much
+;research, it was evidant for an interrupt to be interrupted the global interrupt bit had to be reset at the entry of the interrupt
+;which it is not reset at the i2c_int section, thus making the whole I2C 'block' atomic. In this proscess it was also fount that
+;the i_temp1 and i_temp2 variables were specifically implemented for use in interrupts and as a result did not need to be saved and
+;restored as previously thought, as a result a higher utilisation of i_temps has been used where appropriate.
+;Also the MOTOR_ID function has been removed and revplaced by simlpy I2C_ADDR, being the full 8 bit WRITE address of the ESC
+
+;All modifications has had the origional code commented out, with the new code below it. They are also marked by a "-TP"
+
+;Tom Paynter - Jet Propulsion Laboratory, 8th February 2016
+
+;**** **** **** **** **** **** **** **** **** **** **** **** **** ****
 ;
 ;Die Benutzung der Software ist mit folgenden Bedingungen verbunden:
 ;
-;1. Da ich alles kostenlos zur Verfügung stelle, gebe ich keinerlei Garantie
-;   und übernehme auch keinerlei Haftung für die Folgen der Benutzung.
+;1. Da ich alles kostenlos zur VerfÃ¼gung stelle, gebe ich keinerlei Garantie
+;   und Ã¼bernehme auch keinerlei Haftung fÃ¼r die Folgen der Benutzung.
 ;
-;2. Die Software ist ausschließlich zur privaten Nutzung bestimmt. Ich
-;   habe nicht geprüft, ob bei gewerblicher Nutzung irgendwelche Patentrechte
-;   verletzt werden oder sonstige rechtliche Einschränkungen vorliegen.
+;2. Die Software ist ausschlieÃŸlich zur privaten Nutzung bestimmt. Ich
+;   habe nicht geprÃ¼ft, ob bei gewerblicher Nutzung irgendwelche Patentrechte
+;   verletzt werden oder sonstige rechtliche EinschrÃ¤nkungen vorliegen.
 ;
-;3. Jeder darf Änderungen vornehmen, z.B. um die Funktion seinen Bedürfnissen
-;   anzupassen oder zu erweitern. Ich würde mich freuen, wenn ich weiterhin als
+;3. Jeder darf Ã„nderungen vornehmen, z.B. um die Funktion seinen BedÃ¼rfnissen
+;   anzupassen oder zu erweitern. Ich wÃ¼rde mich freuen, wenn ich weiterhin als
 ;   Co-Autor in den Unterlagen erscheine und mir ein Link zur entprechenden Seite
 ;   (falls vorhanden) mitgeteilt wird.
 ;
-;4. Auch nach den Änderungen sollen die Software weiterhin frei sein, d.h. kostenlos bleiben.
+;4. Auch nach den Ã„nderungen sollen die Software weiterhin frei sein, d.h. kostenlos bleiben.
 ;
 ;!! Wer mit den Nutzungbedingungen nicht einverstanden ist, darf die Software nicht nutzen !!
 ;
@@ -80,83 +101,85 @@
 ;
 ; The following only works with avra or avrasm2.
 ; For avrasm32, just comment out all but the include you need.
-#if defined(afro_esc)
-#include "afro.inc"		; AfroESC (ICP PWM, I2C, UART)
-#elif defined(afro2_esc)
-#include "afro2.inc"		; AfroESC 2 (ICP PWM, I2C, UART)
-#elif defined(afro_hv_esc)
-#include "afro_hv.inc"		; AfroESC HV with drivers (ICP PWM, I2C, UART)
-#elif defined(afro_nfet_esc)
+;#if defined(afro_esc)
+;#include "afro.inc"		; AfroESC (ICP PWM, I2C, UART)
+;#elif defined(afro2_esc)
+;#include "afro2.inc"		; AfroESC 2 (ICP PWM, I2C, UART)
+;#elif defined(afro_hv_esc)
+;#include "afro_hv.inc"		; AfroESC HV with drivers (ICP PWM, I2C, UART)
+;#elif defined(afro_nfet_esc)
+
+; Removing all but the Afroo NFET include
 #include "afro_nfet.inc"	; AfroESC 3 with all nFETs (ICP PWM, I2C, UART)
-#elif defined(afro_pr0_esc)
-#include "afro_pr0.inc"		; AfroESC prototype rev0 with NCP5911 (ICP PWM)
-#elif defined(afro_pr1_esc)
-#include "afro_pr1.inc"		; AfroESC prototype rev1 with NCP5911 (ICP PWM)
-#elif defined(arctictiger_esc)
-#include "arctictiger.inc"	; Arctic Tiger 30A ESC with all nFETs (ICP PWM)
-#elif defined(birdie70a_esc)
-#include "birdie70a.inc"	; Birdie 70A with all nFETs (INT0 PWM)
-#elif defined(mkblctrl1_esc)
-#include "mkblctrl1.inc"	; MK BL-Ctrl v1.2 (ICP PWM, I2C, UART, high side PWM, sense hack)
-#elif defined(bs_esc)
-#include "bs.inc"		; HobbyKing BlueSeries / Mystery (INT0 PWM)
-#elif defined(bs_nfet_esc)
-#include "bs_nfet.inc"		; HobbyKing BlueSeries / Mystery with all nFETs (INT0 PWM)
-#elif defined(bs40a_esc)
-#include "bs40a.inc"		; HobbyKing BlueSeries / Mystery 40A (INT0 PWM)
-#elif defined(dlu40a_esc)
-#include "dlu40a.inc"		; Pulso Advance Plus 40A DLU40A inverted-PWM-opto (INT0 PWM)
-#elif defined(dlux_esc)
-#include "dlux.inc"		; HobbyKing Dlux Turnigy ESC 20A
-#elif defined(diy0_esc)
-#include "diy0.inc"		; HobbyKing DIY Open ESC (unreleased rev 0)
-#elif defined(dys_nfet_esc)
-#include "dys_nfet.inc"		; DYS 30A ESC with all nFETs (ICP PWM, I2C, UART)
-#elif defined(hk200a_esc)
-#include "hk200a.inc"		; HobbyKing SS Series 190-200A with all nFETs (INT0 PWM)
-#elif defined(hm135a_esc)
-#include "hm135a.inc"		; Hacker/Jeti Master 135-O-F5B 135A inverted-PWM-opto (INT0 PWM)
-#elif defined(hxt200a_esc)
-#include "hxt200a.inc"		; HexTronik F3J HXT200A HV ESC (INT0 PWM, I2C, UART)
-#elif defined(kda_esc)
-#include "kda.inc"		; Keda/Multistar 12A, 20A, 30A (original) (inverted INT0 PWM)
-#elif defined(kda_8khz_esc)
-#include "kda_8khz.inc"		; Keda/Multistar 30A (early 2014) (inverted INT0 PWM)
-#elif defined(kda_nfet_esc)
-#include "kda_nfet.inc"		; Keda/Multistar 30A with all nFETs (inverted INT0 PWM)
-#elif defined(kda_nfet_ni_esc)
-#include "kda_nfet_ni.inc"	; Keda/Multistar/Sunrise ~30A with all nFETs (INT0 PWM)
-#elif defined(rb50a_esc)
-#include "rb50a.inc"		; Red Brick 50A with all nFETs (INT0 PWM)
-#elif defined(rb70a_esc)
-#include "rb70a.inc"		; Red Brick 70A with all nFETs (INT0 PWM)
-#elif defined(rb70a2_esc)
-#include "rb70a2.inc"		; Newer Red Brick 70A with blue pcb and all nFETs (INT0 PWM)
-#elif defined(rct50a_esc)
-#include "rct50a.inc"		; RCTimer 50A (MLF version) with all nFETs (INT0 PWM)
-#elif defined(tbs_esc)
-#include "tbs.inc"		; TBS 30A ESC (Team BlackSheep) with all nFETs (ICP PWM, UART)
-#elif defined(tbs_hv_esc)
-#include "tbs_hv.inc"		; TBS high voltage ESC (Team BlackSheep) with all nFETs (ICP PWM, UART)
-#elif defined(tp_esc)
-#include "tp.inc"		; TowerPro 25A/HobbyKing 18A "type 1" (INT0 PWM)
-#elif defined(tp_8khz_esc)
-#include "tp_8khz.inc"		; TowerPro 25A/HobbyKing 18A "type 1" (INT0 PWM) at 8kHz PWM
-#elif defined(tp_i2c_esc)
-#include "tp_i2c.inc"		; TowerPro 25A/HobbyKing 18A "type 1" (I2C)
-#elif defined(tp_nfet_esc)
-#include "tp_nfet.inc"		; TowerPro 25A with all nFETs "type 3" (INT0 PWM)
-#elif defined(tp70a_esc)
-#include "tp70a.inc"		; TowerPro 70A with BL8003 FET drivers (INT0 PWM)
-#elif defined(tgy6a_esc)
-#include "tgy6a.inc"		; Turnigy Plush 6A (INT0 PWM)
-#elif defined(tgy_8mhz_esc)
-#include "tgy_8mhz.inc"		; TowerPro/Turnigy Basic/Plush "type 2" w/8MHz oscillator (INT0 PWM)
-#elif defined(tgy_esc)
-#include "tgy.inc"		; TowerPro/Turnigy Basic/Plush "type 2" (INT0 PWM)
-#else
-#error "Unrecognized board type."
-#endif
+;#elif defined(afro_pr0_esc)
+;#include "afro_pr0.inc"		; AfroESC prototype rev0 with NCP5911 (ICP PWM)
+;#elif defined(afro_pr1_esc)
+;#include "afro_pr1.inc"		; AfroESC prototype rev1 with NCP5911 (ICP PWM)
+;#elif defined(arctictiger_esc)
+;#include "arctictiger.inc"	; Arctic Tiger 30A ESC with all nFETs (ICP PWM)
+;#elif defined(birdie70a_esc)
+;#include "birdie70a.inc"	; Birdie 70A with all nFETs (INT0 PWM)
+;#elif defined(mkblctrl1_esc)
+;#include "mkblctrl1.inc"	; MK BL-Ctrl v1.2 (ICP PWM, I2C, UART, high side PWM, sense hack)
+;#elif defined(bs_esc)
+;#include "bs.inc"		; HobbyKing BlueSeries / Mystery (INT0 PWM)
+;#elif defined(bs_nfet_esc)
+;#include "bs_nfet.inc"		; HobbyKing BlueSeries / Mystery with all nFETs (INT0 PWM)
+;#elif defined(bs40a_esc)
+;#include "bs40a.inc"		; HobbyKing BlueSeries / Mystery 40A (INT0 PWM)
+;#elif defined(dlu40a_esc)
+;#include "dlu40a.inc"		; Pulso Advance Plus 40A DLU40A inverted-PWM-opto (INT0 PWM)
+;#elif defined(dlux_esc)
+;#include "dlux.inc"		; HobbyKing Dlux Turnigy ESC 20A
+;#elif defined(diy0_esc)
+;#include "diy0.inc"		; HobbyKing DIY Open ESC (unreleased rev 0)
+;#elif defined(dys_nfet_esc)
+;#include "dys_nfet.inc"		; DYS 30A ESC with all nFETs (ICP PWM, I2C, UART)
+;#elif defined(hk200a_esc)
+;#include "hk200a.inc"		; HobbyKing SS Series 190-200A with all nFETs (INT0 PWM)
+;#elif defined(hm135a_esc)
+;#include "hm135a.inc"		; Hacker/Jeti Master 135-O-F5B 135A inverted-PWM-opto (INT0 PWM)
+;#elif defined(hxt200a_esc)
+;#include "hxt200a.inc"		; HexTronik F3J HXT200A HV ESC (INT0 PWM, I2C, UART)
+;#elif defined(kda_esc)
+;#include "kda.inc"		; Keda/Multistar 12A, 20A, 30A (original) (inverted INT0 PWM)
+;#elif defined(kda_8khz_esc)
+;#include "kda_8khz.inc"		; Keda/Multistar 30A (early 2014) (inverted INT0 PWM)
+;#elif defined(kda_nfet_esc)
+;#include "kda_nfet.inc"		; Keda/Multistar 30A with all nFETs (inverted INT0 PWM)
+;#elif defined(kda_nfet_ni_esc)
+;#include "kda_nfet_ni.inc"	; Keda/Multistar/Sunrise ~30A with all nFETs (INT0 PWM)
+;#elif defined(rb50a_esc)
+;#include "rb50a.inc"		; Red Brick 50A with all nFETs (INT0 PWM)
+;#elif defined(rb70a_esc)
+;#include "rb70a.inc"		; Red Brick 70A with all nFETs (INT0 PWM)
+;#elif defined(rb70a2_esc)
+;#include "rb70a2.inc"		; Newer Red Brick 70A with blue pcb and all nFETs (INT0 PWM)
+;#elif defined(rct50a_esc)
+;#include "rct50a.inc"		; RCTimer 50A (MLF version) with all nFETs (INT0 PWM)
+;#elif defined(tbs_esc)
+;#include "tbs.inc"		; TBS 30A ESC (Team BlackSheep) with all nFETs (ICP PWM, UART)
+;#elif defined(tbs_hv_esc)
+;#include "tbs_hv.inc"		; TBS high voltage ESC (Team BlackSheep) with all nFETs (ICP PWM, UART)
+;#elif defined(tp_esc)
+;#include "tp.inc"		; TowerPro 25A/HobbyKing 18A "type 1" (INT0 PWM)
+;#elif defined(tp_8khz_esc)
+;#include "tp_8khz.inc"		; TowerPro 25A/HobbyKing 18A "type 1" (INT0 PWM) at 8kHz PWM
+;#elif defined(tp_i2c_esc)
+;#include "tp_i2c.inc"		; TowerPro 25A/HobbyKing 18A "type 1" (I2C)
+;#elif defined(tp_nfet_esc)
+;#include "tp_nfet.inc"		; TowerPro 25A with all nFETs "type 3" (INT0 PWM)
+;#elif defined(tp70a_esc)
+;#include "tp70a.inc"		; TowerPro 70A with BL8003 FET drivers (INT0 PWM)
+;#elif defined(tgy6a_esc)
+;#include "tgy6a.inc"		; Turnigy Plush 6A (INT0 PWM)
+;#elif defined(tgy_8mhz_esc)
+;#include "tgy_8mhz.inc"		; TowerPro/Turnigy Basic/Plush "type 2" w/8MHz oscillator (INT0 PWM)
+;#elif defined(tgy_esc)
+;#include "tgy.inc"		; TowerPro/Turnigy Basic/Plush "type 2" (INT0 PWM)
+;#else
+;#error "Unrecognized board type."
+;#endif
 
 .equ	CPU_MHZ		= F_CPU / 1000000
 
@@ -165,8 +188,16 @@
 .equ	BOOT_START	= THIRDBOOTSTART
 
 .if !defined(COMP_PWM)
+;********** CRITICAL FORMATTING *******
+;Do not the following line as the batch compiler will be looking for it!
+
+
 .equ	COMP_PWM	= 0	; During PWM off, switch high side on (unsafe on some boards!)
+
+
+;********** CRITICAL FORMATTING END *******
 .endif
+
 .if !defined(DEAD_LOW_NS)
 .equ	DEAD_LOW_NS	= 300	; Low-side dead time w/COMP_PWM (62.5ns steps @ 16MHz, max 2437ns)
 .equ	DEAD_HIGH_NS	= 300	; High-side dead time w/COMP_PWM (62.5ns steps @ 16MHz, max roughly PWM period)
@@ -183,7 +214,14 @@
 .equ	MOTOR_BRAKE	= 0	; Enable brake during neutral/idle ("motor drag" brake)
 .equ	LOW_BRAKE	= 0	; Enable brake on very short RC pulse ("thumb" brake like on Airtronics XL2P)
 .if !defined(MOTOR_REVERSE)
+;********** CRITICAL FORMATTING *******
+;Do not the following line as the batch compiler will be looking for it!
+
+
 .equ	MOTOR_REVERSE	= 0	; Reverse normal commutation direction
+
+
+;********** CRITICAL FORMATTING END *******
 .endif
 .equ	RC_PULS_REVERSE	= 0	; Enable RC-car style forward/reverse throttle
 .equ	RC_CALIBRATION	= 1	; Support run-time calibration of min/max pulse lengths
@@ -200,8 +238,16 @@
 .equ	DEBUG_ADC_DUMP	= 0	; Output an endless loop of all ADC values (no normal operation)
 .equ	MOTOR_DEBUG	= 0	; Output sync pulses on MOSI or SCK, debug flag on MISO
 
-.equ	I2C_ADDR	= 0x50	; MK-style I2C address
-.equ	MOTOR_ID	= 1	; MK-style I2C motor ID, or UART motor number
+;Simple 8 bit I2C Address
+;********** CRITICAL FORMATTING *******
+;Do not the following line as the batch compiler will be looking for it!
+
+
+.equ I2C_ADDR = 0x50 ; Default 8 bit Write I2C address
+
+
+;********** CRITICAL FORMATTING END *******
+.equ	MOTOR_ID	= 0	; MK-style I2C motor ID, or UART motor number, left for Legacy
 
 .equ	RCP_TOT		= 2	; Number of 65536us periods before considering rc pulse lost
 
@@ -392,7 +438,17 @@ low_brake_h:	.byte	1
 i2c_max_pwm:	.byte	1	; MaxPWM for MK (NOTE: 250 while stopped is magic and enables v2)
 i2c_rx_state:	.byte	1
 i2c_blc_offset:	.byte	1
+
+;Adding com_count_h & com_count_l RAM addresses for commutation step counter
+com_count_l:	.byte	1	;Total number of commutation steps, will roll over once full
+com_count_h:	.byte	1
+com_count_l_before: .byte 1 ;Backup for atomic transmision
 .endif
+
+;Adding i2c_tx_counter RAM addresses to enable multi byte messages
+i2c_tx_counter: .byte 1		; A counter to keep track of which I2C byte to send
+ZL_backup:    .byte 1 		;ZL register backup
+temp1_backup:    .byte 1 	;temp1 register backup
 motor_count:	.byte	1	; Motor number for serial control
 brake_sub:	.byte	1	; Brake speed subtrahend (power of two)
 brake_want:	.byte	1	; Type of brake desired
@@ -1302,6 +1358,20 @@ eeprom_defaults_w:
 	.if MOTOR_DEBUG && (DIR_PB & (1<<4)) == 0
 		sbi	PORTB, 4
 	.endif
+
+	;Adding in the commutation counter as a piggyback onto the MOTOR_DEBUG function
+	sts temp1_backup, temp1 ; Backing up temp_1 as it is used elsewhere
+	in temp1, SREG          ;Save Interrupt settings
+  cli                     ;Start Critical Section
+	lds	YH, com_count_h	    ;Store to SRAM, YH with com_count_h
+	lds	YL, com_count_l	    ;Store to SRAM, YH with com_count_h
+	adiw YL, 1              ;Add immediate to word, Y = Y + 1
+	sts	com_count_h, YH	    ;Store to SRAM, YH with com_count_h
+	sts	com_count_l, YL	    ;Store to SRAM, YH with com_count_h
+	out SREG, temp1         ;End Critical Section
+	lds temp1, temp1_backup ;Restore Temp1
+
+
 .endmacro
 .macro flag_off
 	.if MOTOR_DEBUG && (DIR_PB & (1<<4)) == 0
@@ -1537,7 +1607,7 @@ t1oca_int1:	sts	ocr1ax, i_temp1
 		out	SREG, i_sreg
 		reti
 ;-----bko-----------------------------------------------------------------
-; timer1 overflow interrupt (happens every 4096µs)
+; timer1 overflow interrupt (happens every 4096Âµs)
 t1ovfl_int:	in	i_sreg, SREG
 		lds	i_temp1, tcnt1x
 		inc	i_temp1
@@ -1640,7 +1710,7 @@ i2c_int:
 		cpi	i_temp1, 0xa8		; tx: received our SLA+R
 		breq	i2c_tx_init
 		cpi	i_temp1, 0xb8		; tx: data request, previously ACKed
-		breq	i2c_tx_data
+		breq	i2c_tx_com_count1
 		cpi	i_temp1, 0xf8		; tx: no relevant state information
 		breq	i2c_io_error
 		cpse	i_temp1, ZH		; Bus error due to illegal start/stop condition
@@ -1648,31 +1718,42 @@ i2c_int:
 i2c_io_error:	ldi	i_temp1, (1<<TWIE)|(1<<TWEN)|(1<<TWSTO)|(1<<TWEA)|(1<<TWINT)
 		rjmp	i2c_out
 
-i2c_tx_init:	sbrc	rx_l, 7			; BLConfig struct requested?
-		rjmp	i2c_tx_blconfig
-		out	TWDR, ZH		; Send 0 as Current (dummy)
-		ldi	i_temp1, 250		; Prepare MaxPWM value (250 when stopped enables MK BL-Ctrl proto v2)
-		sbrc	flags1, POWER_ON
-i2c_tx_datarep:	ldi	i_temp1, 255		; Send MaxPWM 255 when running (and repeat for Temperature)
-		sts	i2c_max_pwm, i_temp1
-		rjmp	i2c_ack
-i2c_tx_data:	sbrc	rx_l, 7			; BLConfig struct requested?
-		rjmp	i2c_tx_blconfig1
-		lds	i_temp1, i2c_max_pwm	; MaxPWM value (has special meaning for MK)
-		out	TWDR, i_temp1
-		rjmp	i2c_tx_datarep		; Send 255 for Temperature for which we should get a NACK (0xc0)
+		; Transmit the commutation step counter when requested
+i2c_tx_init:	;sbrc	rx_l, 7			; BLConfig struct requested?
+		rjmp	i2c_tx_com_count
 
-i2c_tx_blconfig:
-		ldi	i_temp1, blc_revision	; First BLConfig structure member
-		sts	i2c_blc_offset, i_temp1
-i2c_tx_blconfig1:
+i2c_tx_com_count:
+		ldi	i_temp1, 0	; Check which byte to send
+		sts	i2c_tx_counter, i_temp1
+i2c_tx_com_count1:
 		mov	i_temp2, ZL		; Save Z
-		lds	ZL, i2c_blc_offset
+		lds	ZL, i2c_tx_counter
 		ld	i_temp1, Z+
-		sts	i2c_blc_offset, ZL
-		out	TWDR, i_temp1
-		cpi	ZL, blc_checksum + 1	; Past last structure member?
+		sts	i2c_tx_counter, ZL ;  i2c_tx_counter = i2c_tx_counter + 1
+		sts	temp1_backup, temp1
+		cpi ZL, 1 ; Choose which byte to load into the I2C buffer
+		breq com_high
+		lds temp1, com_count_l_before
+
+		rjmp continue
+
+com_high:
+
+		sts temp1_backup, ZL
+		in ZL, SREG
+		cli
+		lds temp1, com_count_l
+		sts	com_count_l_before, temp1
+		out SREG, ZL
+		lds ZL, temp1_backup
+
+		lds temp1, com_count_h
+
+continue:
+		out	TWDR, temp1
+		cpi	ZL, 2	; Past last byte?
 		mov	ZL, i_temp2		; Restore Z
+		lds temp1, temp1_backup
 		breq	i2c_nack		; No more space
 		rjmp	i2c_ack
 
@@ -1765,7 +1846,7 @@ urxc_exit:	out	SREG, i_sreg
 		reti
 	.endif
 ;-----bko-----------------------------------------------------------------
-; beeper: timer0 is set to 1µs/count
+; beeper: timer0 is set to 1Âµs/count
 beep_f1:	ldi	temp2, 80
 		ldi	temp4, 200
 		RED_on
@@ -1820,7 +1901,7 @@ beep_f4_on:	CpFET_on
 ; must be muted first
 beep:		out	TCNT0, ZH
 beep1:		in	temp1, TCNT0
-		cpi	temp1, 2*CPU_MHZ	; 32µs on
+		cpi	temp1, 2*CPU_MHZ	; 32Âµs on
 		brlo	beep1
 		all_pFETs_off temp3
 		all_nFETs_off temp3
@@ -2616,7 +2697,9 @@ evaluate_rc_i2c:
 	; power from the highest MaxGas setting in MK-Tools. Bernhard's
 	; original version reaches full power at around 245.
 		movw	temp1, YL
-		ldi2	temp3, temp4, 0x100 * (POWER_RANGE - MIN_DUTY) / 247
+		ldi2	temp3, temp4, 0x100 * (POWER_RANGE - MIN_DUTY) / 100 ;In order to
+	; scale so that an integer increment in the I2C drive speed represents the
+	; smallest speed increment. Thus the I2C accepts drive values from 1 to 800
 		rjmp	rc_do_scale		; The rest of the code is common
 .endif
 ;-----bko-----------------------------------------------------------------
@@ -3195,7 +3278,7 @@ boot_loader_jump:
 ;-----bko-----------------------------------------------------------------
 .if USE_I2C
 i2c_init:
-		ldi	temp1, I2C_ADDR + (MOTOR_ID << 1)
+		ldi	temp1, I2C_ADDR ; As defined earlier by the 8 bit I2C_ADDR definition
 		.if defined(MK_ADDRESS_PADS)
 		sbis	PINB, adr1		; Offset MOTOR_ID by address pads
 		subi	temp1, -1
