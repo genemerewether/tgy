@@ -37,6 +37,9 @@ program_tgy_%: %.hex
 program_usbasp_%: %.hex
 	avrdude -c usbasp -B.5 -p m8 -U flash:w:$<:i
 
+program_usbtiny_%: %.hex
+	avrdude -c usbtiny -p m8 -U flash:w:$<:i
+
 program_avrisp2_%: %.hex
 	avrdude -c avrisp2 -p m8 -U flash:w:$<:i
 
@@ -52,6 +55,9 @@ program_uisp_%: %.hex
 bootload_usbasp:
 	avrdude -c usbasp -u -p m8 -U hfuse:w:`avrdude -c usbasp -u -p m8 -U hfuse:r:-:h | sed -n '/^0x/{s/.$$/a/;p}'`:m
 
+bootload_usbtiny:
+	avrdude -c usbtiny -u -p m8 -U hfuse:w:0xca:m
+
 read: read_tgy
 
 read_tgy:
@@ -59,6 +65,9 @@ read_tgy:
 
 read_usbasp:
 	avrdude -c usbasp -u -p m8 -U flash:r:flash.hex:i -U eeprom:r:eeprom.hex:i
+
+read_usbtiny:
+	avrdude -c usbtiny -u -p m8 -U flash:r:flash.hex:i -U eeprom:r:eeprom.hex:i
 
 read_avrisp2:
 	avrdude -c avrisp2 -p m8 -P usb -v -U flash:r:flash.hex:i -U eeprom:r:eeprom.hex:i
@@ -81,7 +90,7 @@ build_blueesc_addresses:
 	done
 
 build_afro_nfet_addresses:
-	for MOTOR_ID in 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16; do \
+	for MOTOR_ID in 0 1 2 3 4 5; do \
 		make clean; \
 		export MOTOR_ID; \
 		make afro_nfet.hex || exit -1; \

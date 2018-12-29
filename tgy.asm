@@ -160,7 +160,7 @@
 .if !defined(TIMING_OFFSET)
 .equ	TIMING_OFFSET	= 0	; Degrees of timing offset in microseconds
 .endif
-.equ	MOTOR_BRAKE	= 0	; Enable brake during neutral/idle ("motor drag" brake)
+.equ	MOTOR_BRAKE	= 1	; Enable brake during neutral/idle ("motor drag" brake)
 .equ	LOW_BRAKE	= 0	; Enable brake on very short RC pulse ("thumb" brake like on Airtronics XL2P)
 .equ	MOTOR_REVERSE	= 0	; Reverse normal commutation direction
 .equ	RC_PULS_REVERSE	= 1	; Enable RC-car style forward/reverse throttle
@@ -177,7 +177,7 @@
 .equ	DEBUG_ADC_DUMP	= 0	; Output an endless loop of all ADC values (no normal operation)
 .equ	MOTOR_DEBUG	= 0	; Output sync pulses on MOSI or SCK, debug flag on MISO
 
-.equ	I2C_ADDR	= 0x29	; MK-style I2C address base minus MOTOR_ID
+.equ	I2C_ADDR	= 11	; MK-style I2C address base minus MOTOR_ID
 
 .equ	RCP_TOT		= 16	; Number of 65536us periods before considering rc pulse lost
 
@@ -2295,11 +2295,10 @@ evaluate_rc_i2c:
 		swap	YL			; 0000xxx0b -> xxx00000b
 		adiw	YL, 0			; 16-bit zero-test
 		breq	rc_duty_set		; Power off
-	; Scale so that YH == 247 is MAX_POWER, to support reaching full
-	; power from the highest MaxGas setting in MK-Tools. Bernhard's
-	; original version reaches full power at around 245.
-		movw	temp1, YL
-		ldi2	temp3, temp4, 0x100 * (POWER_RANGE - MIN_DUTY) / 247
+	; Scale so the I2C increments are the same size as the PWM output
+    ; increments. Values range from 1 to 800
+     	movw	temp1, YL
+		ldi2	temp3, temp4, 0x100 * (POWER_RANGE - MIN_DUTY) / 100
 		rjmp	rc_do_scale		; The rest of the code is common
 	.else
 		cbr	flags1, (1<<EVAL_RC)+(1<<REVERSE)
