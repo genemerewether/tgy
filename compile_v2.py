@@ -7,7 +7,7 @@ import argparse
 
 parser = argparse.ArgumentParser(description="This utility is to program multiple Afro ESCs with different I2C addresses on the SimonK firmware")
 
-parser.add_argument("path", type=str, help="The device location for the Afro USB programmer")
+#parser.add_argument("path", type=str, help="The device location for the Afro USB programmer")
 group = parser.add_mutually_exclusive_group()
 group.add_argument("-id", type=int, help="The PX4 motor ID (1-8)")
 group.add_argument("-a", type=int, help="The general 7-bit I2C address")
@@ -18,7 +18,7 @@ args = parser.parse_args()
         
 #****** Open the 'main.asm' file and the new ID one to write to****** 
 mainfile = open("tgy.asm")
-newfile = open("/tmp/tgy.asm","a")
+newfile = open("./tgy_new.asm","w")
 
 #****** Decipher the user input ****** 
 if args.id == None and args.a == None:
@@ -67,7 +67,7 @@ while 1:
 newfile.close()
 
 #****** Compile and Program ****** 
-os.system('cd /tmp && avra tgy.asm')
+os.system('avra ./tgy_new.asm')
 
-os.system('avrdude -p m8 -P ' + args.path + ' -c avrispv2 -b 9600 -e -U flash:w:/tmp/tgy.hex:i') # The AVRISP with a baud rate of 9600 has the same ISP settings as the AfroUSB programmer, as verifid by KK-Coptertool
+#os.system('avrdude -p m8 -P ' + args.path + ' -c avrispv2 -b 9600 -e -U flash:w:/tmp/tgy.hex:i') # The AVRISP with a baud rate of 9600 has the same ISP settings as the AfroUSB programmer, as verifid by KK-Coptertool
 
