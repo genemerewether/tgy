@@ -90,7 +90,7 @@ build_blueesc_addresses:
 	done
 
 build_afro_nfet_addresses:
-	for MOTOR_ID in 0 1 2 3 4 5; do \
+	for MOTOR_ID in 0 1 2 3 4 5 6 7 8 9; do \
 		make clean; \
 		export MOTOR_ID; \
 		make afro_nfet.hex || exit -1; \

@@ -160,7 +160,7 @@
 .if !defined(TIMING_OFFSET)
 .equ	TIMING_OFFSET	= 0	; Degrees of timing offset in microseconds
 .endif
-.equ	MOTOR_BRAKE	= 1	; Enable brake during neutral/idle ("motor drag" brake)
+.equ	MOTOR_BRAKE	= 0	; Enable brake during neutral/idle ("motor drag" brake)
 .equ	LOW_BRAKE	= 0	; Enable brake on very short RC pulse ("thumb" brake like on Airtronics XL2P)
 .equ	MOTOR_REVERSE	= 0	; Reverse normal commutation direction
 .equ	RC_PULS_REVERSE	= 1	; Enable RC-car style forward/reverse throttle
@@ -2297,7 +2297,7 @@ evaluate_rc_i2c:
 		breq	rc_duty_set		; Power off
 	; Scale so the I2C increments are the same size as the PWM output
     ; increments. Values range from 1 to 800
-     	movw	temp1, YL
+		movw	temp1, YL
 		ldi2	temp3, temp4, 0x100 * (POWER_RANGE - MIN_DUTY) / 100
 		rjmp	rc_do_scale		; The rest of the code is common
 	.else
